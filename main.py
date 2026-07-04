@@ -1760,6 +1760,8 @@ def main():
             print(f"本轮测速无有效结果，等待 {BANDWIDTH_RETRY_DELAY} 秒后重试...")
             time.sleep(BANDWIDTH_RETRY_DELAY)
 
+    score_dict = {}
+    scored_nodes = []
     if not bw_results:
         print("\n带宽测速多次重试仍无有效结果，将使用 TCP 筛选结果作为最终节点。")
         send_wxpusher_notification(
