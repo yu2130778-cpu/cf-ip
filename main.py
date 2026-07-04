@@ -280,6 +280,8 @@ def load_config():
         "IP_TXT_SHOW_HTTP_LATENCY": False,
         "IP_TXT_SHOW_HTTP_JITTER": False,
         "IP_TXT_SHOW_LATENCY": False,
+        "FORCE_COUNTRIES": [],
+        "FORCE_COUNTRIES_MIN_COUNT": 2,
     }
 
     try:
@@ -401,6 +403,8 @@ IP_TXT_SHOW_BANDWIDTH = cfg["IP_TXT_SHOW_BANDWIDTH"]
 IP_TXT_SHOW_HTTP_LATENCY = cfg["IP_TXT_SHOW_HTTP_LATENCY"]
 IP_TXT_SHOW_HTTP_JITTER = cfg["IP_TXT_SHOW_HTTP_JITTER"]
 IP_TXT_SHOW_LATENCY = cfg["IP_TXT_SHOW_LATENCY"]
+FORCE_COUNTRIES = [c.upper() for c in cfg.get("FORCE_COUNTRIES", [])]
+FORCE_COUNTRIES_MIN_COUNT = cfg.get("FORCE_COUNTRIES_MIN_COUNT", 2)
 
 if FORCE_DIRECT:
     for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
@@ -1771,6 +1775,9 @@ def main():
                 nodes_sorted = sorted(nodes, key=lambda x: (-x[2], x[1]))
                 for node_str, _, _ in nodes_sorted[:PER_COUNTRY_TOP_N]:
                     final_selected.append(node_str)
+        # Build scored_nodes for force-countries diversity code
+        scored_nodes = [(node, -tcp_lat, 0, tcp_lat, 0) for node, tcp_lat, _, _ in results]
+        score_dict = {item[0]: item[1] for item in scored_nodes}
     else:
         speed_map = {node: speed for node, speed in bw_results}
         scored_nodes = []
@@ -1803,6 +1810,27 @@ def main():
             score_dict = {item[0]: item[1] for item in scored_nodes}
             final_selected.sort(key=lambda n: score_dict.get(n, 0), reverse=True)
 
+
+    # === 强制保留指定国家的节点 ===
+    if FORCE_COUNTRIES:
+        for fc in FORCE_COUNTRIES:
+            tag = '#' + fc
+            forced_in_list = [n for n in final_selected if n.endswith(tag)]
+            if len(forced_in_list) < FORCE_COUNTRIES_MIN_COUNT:
+                need = FORCE_COUNTRIES_MIN_COUNT - len(forced_in_list)
+                candidates = [item for item in scored_nodes if item[0].endswith(tag) and item[0] not in final_selected]
+                candidates.sort(key=lambda x: x[1], reverse=True)
+                added = 0
+                for cand in candidates:
+                    if added >= need:
+                        break
+                    if final_selected:
+                        worst = min(final_selected, key=lambda n: score_dict.get(n, 0))
+                        final_selected.remove(worst)
+                        final_selected.append(cand[0])
+                        added += 1
+        final_selected.sort(key=lambda n: score_dict.get(n, 0), reverse=True)
+        print(f"    [国家保护] 强制保留: {len(final_selected)} 个节点")
         print("\n================ 最终优选节点 ================")
         for i, node in enumerate(final_selected, 1):
             speed = speed_map.get(node, 0)
